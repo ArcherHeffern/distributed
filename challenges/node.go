@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
-
+	"time"
+	"github.com/leonelquinteros/gorand"
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
@@ -29,8 +31,6 @@ func handle_echo(n *maelstrom.Node) {
 	})
 }
 
-var i int32 = 0
-
 func handle_generate_id(n *maelstrom.Node) {
 	n.Handle("generate", func(msg maelstrom.Message) error {
 		// Unmarshal the message body as an loosely-typed map.
@@ -38,9 +38,14 @@ func handle_generate_id(n *maelstrom.Node) {
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
+		t := time.Now().UnixNano()
+		uuid, err := gorand.UUIDv4()
+		if err != nil {
+			panic(err.Error())
+		}
+		out := fmt.Sprintf("%d%s", t, uuid)
 		body["type"] = "generate_ok"
-		body["id"] = i
-		i += 1
+		body["id"] = out
 		return n.Reply(msg, body)
 	})
 }

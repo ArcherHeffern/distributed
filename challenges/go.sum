@@ -1,5 +1,7 @@
 github.com/jepsen-io/maelstrom/demo/go v0.0.0-20240408130303-0186f398f965 h1:HlnqZcDPLpwPZifK+6BhoPrn7c9lKu+bJ/3AuFcGQqA=
 github.com/jepsen-io/maelstrom/demo/go v0.0.0-20240408130303-0186f398f965/go.mod h1:i6aVIs5AIOOaQF1lAisBm7DDeWM1Iopf+26UxjagsCU=
+github.com/leonelquinteros/gorand v1.0.2 h1:YgHYktP/OwC0dA6xwrsV/cFjmKzN4Y1vTfnMsRDd8XQ=
+github.com/leonelquinteros/gorand v1.0.2/go.mod h1:4WDunrt62rJvd9p8yR8nxiheNTOt7Q3a4ZiepMInQ58=
 golang.org/x/text v0.0.0-20170915032832-14c0d48ead0c h1:qgOY6WgZOaTkIIMiVjBQcw93ERBE4m30iBm00nkL0i8=
 golang.org/x/text v0.0.0-20170915032832-14c0d48ead0c/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 rsc.io/quote v1.5.2 h1:w5fcysjrx7yqtD/aO+QwRjYZOKnaM9Uh2b40tElTs3Y=

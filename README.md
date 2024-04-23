@@ -15,5 +15,5 @@
 
 # Testing
 ```bash
-cat ./tests/1 | ./challenges/node
+(cd challenges && go build node.go) && cat ./tests/1 | ./challenges/node
 ```
