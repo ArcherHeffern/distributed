@@ -22,6 +22,10 @@ func main() {
 	// handle_broadcast_a(n)
 	// handle_topology_a(n)
 	// 3a
+	handle_read_a(n)
+	handle_broadcast_a(n)
+	handle_topology_a(n)
+	// 3b-c
 	handle_read_b(n)
 	handle_broadcast_b(n)
 	handle_topology_b(n)
@@ -118,7 +122,7 @@ func handle_topology_a(n *maelstrom.Node) {
 }
 
 // ############
-// Challenge 3b: Multi Node Broadcast Service
+// Challenge 3b-c: Multi Node Broadcast Service
 // ############
 const FANOUT = 3
 
