@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
@@ -16,10 +17,14 @@ func main() {
 	// handle_echo(n)
 	// 2
 	// handle_generate_id(n)
-	// 3
-	handle_read(n)
-	handle_broadcast(n)
-	handle_topology(n)
+	// 3a
+	// handle_read_a(n)
+	// handle_broadcast_a(n)
+	// handle_topology_a(n)
+	// 3a
+	handle_read_b(n)
+	handle_broadcast_b(n)
+	handle_topology_b(n)
 	// 4
 	// 5
 
@@ -67,11 +72,11 @@ func handle_generate_id(n *maelstrom.Node) {
 }
 
 // ############
-// Challenge 3: Broadcast Service
+// Challenge 3a: Single Node Broadcast Service
 // ############
 var seen = make([]float64, 0)
 
-func handle_read(n *maelstrom.Node) {
+func handle_read_a(n *maelstrom.Node) {
 	n.Handle("read", func(msg maelstrom.Message) error {
 		// Unmarshal the message body as an loosely-typed map.
 		var req_body map[string]any
@@ -85,7 +90,7 @@ func handle_read(n *maelstrom.Node) {
 	})
 }
 
-func handle_broadcast(n *maelstrom.Node) {
+func handle_broadcast_a(n *maelstrom.Node) {
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
 		// Unmarshal the message body as an loosely-typed map.
 		var req_body map[string]any
@@ -99,7 +104,7 @@ func handle_broadcast(n *maelstrom.Node) {
 	})
 }
 
-func handle_topology(n *maelstrom.Node) {
+func handle_topology_a(n *maelstrom.Node) {
 	n.Handle("topology", func(msg maelstrom.Message) error {
 		// Unmarshal the message body as an loosely-typed map.
 		var req_body map[string]any
@@ -107,6 +112,58 @@ func handle_topology(n *maelstrom.Node) {
 		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
 			return err
 		}
+		res_body["type"] = "topology_ok"
+		return n.Reply(msg, res_body)
+	})
+}
+
+// ############
+// Challenge 3b: Multi Node Broadcast Service
+// ############
+const FANOUT = 3
+
+func handle_read_b(n *maelstrom.Node) {
+	n.Handle("read", func(msg maelstrom.Message) error {
+		// Unmarshal the message body as an loosely-typed map.
+		var req_body map[string]any
+		var res_body = make(map[string]any)
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		res_body["type"] = "read_ok"
+		res_body["messages"] = seen
+		return n.Reply(msg, res_body)
+	})
+}
+
+func handle_broadcast_b(n *maelstrom.Node) {
+	n.Handle("broadcast", func(msg maelstrom.Message) error {
+		// Unmarshal the message body as an loosely-typed map.
+		var req_body map[string]any
+		var res_body = make(map[string]any)
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		var message = req_body["message"].(float64)
+		// If we have already seen this, don't send out
+		if !slices.Contains(seen, message) {
+			for _, dest := range n.NodeIDs() {
+				if dest == n.ID() {
+					continue
+				}
+				n.Send(dest, req_body)
+			}
+			seen = append(seen, message)
+		}
+
+		res_body["type"] = "broadcast_ok"
+		return n.Reply(msg, res_body)
+	})
+}
+
+func handle_topology_b(n *maelstrom.Node) {
+	n.Handle("topology", func(msg maelstrom.Message) error {
+		var res_body = make(map[string]any)
 		res_body["type"] = "topology_ok"
 		return n.Reply(msg, res_body)
 	})

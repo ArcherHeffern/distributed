@@ -10,7 +10,7 @@ set -euo pipefail
 M="./maelstrom/maelstrom"
 B="./challenges/node"
 
-PROBLEMS=('Echo Server' 'Unique Id Generation' 'Single Node Broadcast')
+PROBLEMS=('Echo Server' 'Unique Id Generation' 'Single Node Broadcast' 'Multi Node Broadcast')
 
 i=1
 for problem in "${PROBLEMS[@]}"; do
@@ -35,4 +35,6 @@ case $choice in
 	$M test -w unique-ids --bin $B --time-limit 3 --rate 1000 --node-count 3 --availability total --nemesis partition;;	
 	3)
 	$M test -w broadcast --bin $B --node-count 1 --time-limit 20 --rate 10;;
+	4) 
+	$M test -w broadcast --bin $B --node-count 5 --time-limit 20 --rate 10;;
 esac
