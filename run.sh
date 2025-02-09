@@ -7,12 +7,13 @@ set -euo pipefail
 
 # On each additional problem: Add to the problems array and the switch statement
 
-PROBLEMS=("Echo Server" "Unique Id Generation")
 M="./maelstrom/maelstrom"
 B="./challenges/node"
 
+PROBLEMS=('Echo Server' 'Unique Id Generation' 'Single Node Broadcast')
+
 i=1
-for problem in $PROBLEMS; do
+for problem in "${PROBLEMS[@]}"; do
 	echo "${i}: ${problem}"
 	((i++))
 done
@@ -32,4 +33,6 @@ case $choice in
 	$M test -w echo --bin $B --node-count 1 --time-limit 10;;	
 	2) 
 	$M test -w unique-ids --bin $B --time-limit 3 --rate 1000 --node-count 3 --availability total --nemesis partition;;	
+	3)
+	$M test -w broadcast --bin $B --node-count 1 --time-limit 20 --rate 10;;
 esac
