@@ -35,6 +35,7 @@ func main() {
 	handle_read_d(n)
 	handle_broadcast_d(n)
 	handle_topology_d(n)
+	handle_yap_d(n)
 
 	// === 4 ===
 
@@ -183,7 +184,10 @@ func handle_topology_b(n *maelstrom.Node) {
 // Challenge 3d: Single Node Broadcast Service
 // ############
 // I tried to implement a gossip protocol here, but 2-4 messages were usually were dropped. In addition, this was not efficient enough to be accepted.
-var seen_map = make(map[float64]bool, 0)
+// Solution: Can broadcast to each other node
+// Issue: Needed to use a lock. I was losing a lot of time on synchronization issues.
+// Others solution uses hierarchical structure where you visit all chidren and parents, and don't backtrack to source or itself. Works but not necessary for performance.
+var seen_map = make(map[float64]struct{})
 var m sync.Mutex
 
 func handle_read_d(n *maelstrom.Node) {
@@ -216,23 +220,33 @@ func handle_broadcast_d(n *maelstrom.Node) {
 
 		var message = req_body["message"].(float64)
 		m.Lock()
-		seen_map[message] = true
+		seen_map[message] = struct{}{}
 		m.Unlock()
-		if n.ID() == n.NodeIDs()[0] {
-			for _, dest := range n.NodeIDs() {
-				if dest == n.ID() || dest == msg.Src {
-					continue
-				}
-				go func() {
-					n.RPC(dest, req_body, nil)
-				}()
+		req_body["type"] = "yap"
+		for _, dest := range n.NodeIDs() {
+			if dest == n.ID() {
+				continue
 			}
-		} else if msg.Src != n.NodeIDs()[0] { // Make sure we don't create an infinite sending loop
 			go func() {
-				n.RPC(n.NodeIDs()[0], req_body, nil)
+				n.RPC(dest, req_body, nil)
 			}()
 		}
 
+		return nil
+	})
+}
+
+func handle_yap_d(n *maelstrom.Node) {
+	n.Handle("yap", func(msg maelstrom.Message) error {
+		// Unmarshal the message body as an loosely-typed map.
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		var message = req_body["message"].(float64)
+		m.Lock()
+		seen_map[message] = struct{}{}
+		m.Unlock()
 		return nil
 	})
 }
