@@ -33,10 +33,17 @@ func main() {
 	// handle_topology_b(n)
 
 	// === 3d ===
-	handle_read_d(n)
-	handle_broadcast_d(n)
-	handle_topology_d(n)
-	handle_yap_d(n)
+	// handle_read_d(n)
+	// handle_broadcast_d(n)
+	// handle_topology_d(n)
+	// handle_yap_d(n)
+
+	// === 3e ===
+	handle_read_e(n)
+	handle_broadcast_e(n)
+	handle_topology_e(n)
+	handle_yap_e(n)
+	batch_routine(n)
 
 	// === 4 ===
 
@@ -182,13 +189,19 @@ func handle_topology_b(n *maelstrom.Node) {
 }
 
 // ############
-// Challenge 3d-e: Single Node Broadcast Service
+// Challenge 3d: Efficient Multi Node Broadcast Service
 // ############
-// I tried to implement a gossip protocol here, but 2-4 messages were usually were dropped. In addition, this was not efficient enough to be accepted.
-// Solution: Can broadcast to each other node
-// Issue: Needed to use a lock. I was losing a lot of time on synchronization issues.
-// Others solution uses hierarchical structure where you visit all chidren and parents, and don't backtrack to source or itself. Works but not necessary for performance.
-// We send batched broadcast messages every 500ms
+// Issue: Probabilistic gossip protocol usually dropped 2-4 messages and it wasn't efficient enough
+// Solution: Recipient can broadcast to every other node
+//
+// Issue: Very high 99-100% percentile latencies.
+// Solution: Needed to use a lock. I was losing a lot of time on synchronization issues.
+//
+// Issue: Needed to maintain reliability of program
+// Solution: Retry RPC up to 100 times using a backoff algorithm
+//
+// Other Notes:
+// Others solution used hierarchical structure where you visit all chidren and parents, and don't backtrack to source or itself. Works but not necessary. (I'm still unsure why they implemented this)
 var seen_map = make(map[float64]struct{})
 var m sync.Mutex
 var retry = 100
@@ -260,6 +273,88 @@ func handle_topology_d(n *maelstrom.Node) {
 			"type": "topology_ok",
 		})
 	})
+}
+
+// ############
+// Challenge 3e: Efficient Multi Node Broadcast Service
+// ############
+// Constraints
+// * Messages-per-operation is below 20
+// * Median latency is below 1 second
+// * Maximum latency is below 2 seconds
+// Approach
+// We now batch broadcast messages "yaps" at an interval to decrease overall network bandwidth
+func handle_read_e(n *maelstrom.Node) {
+	n.Handle("read", func(msg maelstrom.Message) error {
+		m.Lock()
+		var seen_list []float64
+		for k, _ := range seen_map {
+			seen_list = append(seen_list, k)
+		}
+		m.Unlock()
+		return n.Reply(msg, map[string]any{
+			"type":     "read_ok",
+			"messages": seen_list,
+		})
+	})
+}
+
+func handle_broadcast_e(n *maelstrom.Node) {
+	n.Handle("broadcast", func(msg maelstrom.Message) error {
+		// Unmarshal the message body as an loosely-typed map.
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		go func() {
+			n.Reply(msg, map[string]any{
+				"type": "broadcast_ok",
+			})
+		}()
+
+		var message = req_body["message"].(float64)
+		m.Lock()
+		seen_map[message] = struct{}{}
+		m.Unlock()
+		req_body["type"] = "yap"
+		for _, dest := range n.NodeIDs() {
+			if dest == n.ID() {
+				continue
+			}
+			go func() {
+				rpcWithRetry(n, dest, req_body, retry)
+			}()
+		}
+
+		return nil
+	})
+}
+
+func handle_yap_e(n *maelstrom.Node) {
+	n.Handle("yap", func(msg maelstrom.Message) error {
+		// Unmarshal the message body as an loosely-typed map.
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		var message = req_body["message"].(float64)
+		m.Lock()
+		seen_map[message] = struct{}{}
+		m.Unlock()
+		return nil
+	})
+}
+
+func handle_topology_e(n *maelstrom.Node) {
+	n.Handle("topology", func(msg maelstrom.Message) error {
+		return n.Reply(msg, map[string]any{
+			"type": "topology_ok",
+		})
+	})
+}
+
+func batch_routine(n *maelstrom.Node) {
+
 }
 
 // ############
