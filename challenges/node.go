@@ -42,7 +42,6 @@ func main() {
 	handle_read_e(n)
 	handle_broadcast_e(n)
 	handle_topology_e(n)
-	handle_yap_e(n)
 	batch_routine(n)
 
 	// === 4 ===
@@ -284,6 +283,12 @@ func handle_topology_d(n *maelstrom.Node) {
 // * Maximum latency is below 2 seconds
 // Approach
 // We now batch broadcast messages "yaps" at an interval to decrease overall network bandwidth
+// Issue: msgs-per-opt actually increased to roughly 200
+// Solution: Create a 1 deep hierarchical structure. This makes the top node very "Hot", but decreased msgs-per-opt to 3.7 (WOW)
+var broadcast_mutex sync.Mutex
+var to_broadcast = make([]float64, 0)
+var batch_interval = 500 * time.Millisecond
+
 func handle_read_e(n *maelstrom.Node) {
 	n.Handle("read", func(msg maelstrom.Message) error {
 		m.Lock()
@@ -312,37 +317,63 @@ func handle_broadcast_e(n *maelstrom.Node) {
 			})
 		}()
 
-		var message = req_body["message"].(float64)
-		m.Lock()
-		seen_map[message] = struct{}{}
-		m.Unlock()
-		req_body["type"] = "yap"
-		for _, dest := range n.NodeIDs() {
-			if dest == n.ID() {
-				continue
-			}
-			go func() {
-				rpcWithRetry(n, dest, req_body, retry)
-			}()
+		var new_messages = make([]float64, 0)
+		if message, exists := req_body["message"]; exists {
+			new_messages = append(new_messages, float64(message.(float64)))
 		}
 
+		if messages, exists := req_body["messages"]; exists {
+			for _, new_message := range messages.([]any) {
+				new_messages = append(new_messages, float64(new_message.(float64)))
+			}
+		}
+
+		m.Lock()
+		broadcast_mutex.Lock()
+		for _, new_message := range new_messages {
+			if _, exists := seen_map[new_message]; !exists {
+				to_broadcast = append(to_broadcast, new_message)
+			}
+			seen_map[new_message] = struct{}{}
+		}
+		broadcast_mutex.Unlock()
+		m.Unlock()
 		return nil
 	})
 }
 
-func handle_yap_e(n *maelstrom.Node) {
-	n.Handle("yap", func(msg maelstrom.Message) error {
-		// Unmarshal the message body as an loosely-typed map.
-		var req_body map[string]any
-		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
-			return err
+func batch_rpc(n *maelstrom.Node) {
+	broadcast_mutex.Lock()
+	defer broadcast_mutex.Unlock()
+	if len(to_broadcast) == 0 {
+		return
+	}
+
+	wg := sync.WaitGroup{}
+	var dests = make([]string, 0)
+
+	if n.ID() == n.NodeIDs()[0] {
+		for _, id := range n.NodeIDs() {
+			dests = append(dests, id)
 		}
-		var message = req_body["message"].(float64)
-		m.Lock()
-		seen_map[message] = struct{}{}
-		m.Unlock()
-		return nil
-	})
+	} else {
+		dests = append(dests, n.NodeIDs()[0])
+	}
+
+	for _, dest := range dests {
+		dest := dest
+		to_broadcast := to_broadcast
+		wg.Add(1)
+		go func() {
+			rpcWithRetry(n, dest, map[string]any{
+				"type":     "broadcast",
+				"messages": to_broadcast,
+			}, retry)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	to_broadcast = make([]float64, 0)
 }
 
 func handle_topology_e(n *maelstrom.Node) {
@@ -354,6 +385,14 @@ func handle_topology_e(n *maelstrom.Node) {
 }
 
 func batch_routine(n *maelstrom.Node) {
+	go func() {
+		for {
+			select {
+			case <-time.After(batch_interval):
+				batch_rpc(n)
+			}
+		}
+	}()
 
 }
 
