@@ -12,8 +12,3 @@
 ```bash
 ./run.sh
 ```
-
-# Testing
-```bash
-(cd challenges && go build node.go) && cat ./tests/1 | ./challenges/node
-```
