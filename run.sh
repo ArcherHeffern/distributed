@@ -10,7 +10,7 @@ set -euo pipefail
 M="./maelstrom/maelstrom"
 B="./challenges/node"
 
-PROBLEMS=('Echo Server' 'Unique Id Generation' 'Single Node Broadcast' 'Multi Node Broadcast' 'Fault Tolerant Broadcast' 'Efficient Broadcast I' 'Efficient Broadcast II')
+PROBLEMS=('Echo Server' 'Unique Id Generation' 'Single Node Broadcast' 'Multi Node Broadcast' 'Fault Tolerant Broadcast' 'Efficient Broadcast I' 'Efficient Broadcast II' 'Grow Only Counter')
 
 i=1
 for problem in "${PROBLEMS[@]}"; do
@@ -43,6 +43,8 @@ case $choice in
 	$M test -w broadcast --bin $B --node-count 25 --time-limit 20 --rate 100 --latency 100 --nemesis partition;;
 	7)
 	$M test -w broadcast --bin $B --node-count 25 --time-limit 20 --rate 100 --latency 100;;
+	8)
+	$M test -w g-counter --bin $B --node-count 3 --rate 100 --time-limit 20 --nemesis partition;;
 	*)
 		echo "Unrecognized option";;
 esac

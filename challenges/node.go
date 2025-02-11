@@ -39,12 +39,15 @@ func main() {
 	// handle_yap_d(n)
 
 	// === 3e ===
-	handle_read_e(n)
-	handle_broadcast_e(n)
-	handle_topology_e(n)
-	batch_routine(n)
+	// handle_read_e(n)
+	// handle_broadcast_e(n)
+	// handle_topology_e(n)
+	// batch_routine(n)
 
 	// === 4 ===
+	var kv = maelstrom.NewSeqKV(n)
+	handle_add(kv, n)
+	handle_read(kv, n)
 
 	// === 5 ===
 
@@ -394,6 +397,59 @@ func batch_routine(n *maelstrom.Node) {
 		}
 	}()
 
+}
+
+// ############
+// Challenge 4: Grow Only Counter
+// ############
+const K = "KEY"
+
+func handle_add(kv *maelstrom.KV, n *maelstrom.Node) {
+	n.Handle("add", func(msg maelstrom.Message) error {
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return nil
+		}
+		var delta = int(req_body["delta"].(float64))
+		for {
+			var ctx1, cancel1 = context.WithTimeout(context.Background(), time.Second)
+			defer cancel1()
+			v, err := kv.ReadInt(ctx1, K)
+			if maelstrom.ErrorCode(err) == maelstrom.KeyDoesNotExist {
+				v = 0
+			} else if err != nil {
+				continue
+			}
+			var ctx2, cancel2 = context.WithTimeout(context.Background(), time.Second)
+			defer cancel2()
+			if err := kv.CompareAndSwap(ctx2, K, v, v+delta, true); err == nil {
+				break
+			}
+		}
+		return n.Reply(msg, map[string]any{
+			"type": "add_ok",
+		})
+	})
+}
+
+func handle_read(kv *maelstrom.KV, n *maelstrom.Node) {
+	n.Handle("read", func(msg maelstrom.Message) error {
+		var value = 0
+		var err error
+		for {
+
+			var ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			value, err = kv.ReadInt(ctx, K)
+			if err == nil {
+				break
+			}
+		}
+		return n.Reply(msg, map[string]any{
+			"type":  "read_ok",
+			"value": value,
+		})
+	})
 }
 
 // ############
