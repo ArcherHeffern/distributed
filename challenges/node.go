@@ -45,11 +45,15 @@ func main() {
 	// batch_routine(n)
 
 	// === 4 ===
-	var kv = maelstrom.NewSeqKV(n)
-	handle_add(kv, n)
-	handle_read(kv, n)
+	// var kv = maelstrom.NewSeqKV(n)
+	// handle_add(kv, n)
+	// handle_read(kv, n)
 
-	// === 5 ===
+	// === 5a ===
+	handle_send_a(n)
+	handle_poll_a(n)
+	handle_commit_offsets_a(n)
+	handle_list_committed_offsets_a(n)
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
@@ -402,6 +406,9 @@ func batch_routine(n *maelstrom.Node) {
 // ############
 // Challenge 4: Grow Only Counter
 // ############
+// Use compare and swap as atomicity primative
+// Try to read the value.
+// If unset
 const K = "KEY"
 
 func handle_add(kv *maelstrom.KV, n *maelstrom.Node) {
@@ -448,6 +455,141 @@ func handle_read(kv *maelstrom.KV, n *maelstrom.Node) {
 		return n.Reply(msg, map[string]any{
 			"type":  "read_ok",
 			"value": value,
+		})
+	})
+}
+
+// ############
+// Challenge 5: Single-Node Kafka-Style Log
+// ############
+var log_mut sync.Mutex
+var kafka_log = make(map[string][]float64)
+
+func handle_send_a(n *maelstrom.Node) {
+	// Request: {
+	//   "type": "send",
+	//   "key": "k1",
+	//   "msg": 123
+	// }
+	//
+	// Response: {
+	//   "type": "send_ok",
+	//   "offset": 1000
+	// }
+	n.Handle("send", func(msg maelstrom.Message) error {
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		var key string = req_body["key"].(string)
+		var val float64 = req_body["msg"].(float64)
+
+		log_mut.Lock()
+		if _, ok := kafka_log[key]; !ok {
+			kafka_log[key] = make([]float64, 0)
+		}
+		kafka_log[key] = append(kafka_log[key], val)
+		var offset = len(kafka_log[key])
+		log_mut.Unlock()
+
+		return n.Reply(msg, map[string]any{
+			"type":   "send_ok",
+			"offset": offset,
+		})
+	})
+}
+
+func handle_poll_a(n *maelstrom.Node) {
+	// Input: {
+	//   "type": "poll",
+	//   "offsets": {
+	//     "k1": 1000,
+	//     "k2": 2000
+	//   }
+	// }
+	//
+	// Output: {
+	//   "type": "poll_ok",
+	//   "msgs": {
+	//     "k1": [[1000, 9], [1001, 5], [1002, 15]],
+	//     "k2": [[2000, 7], [2001, 2]]
+	//   }
+	// }
+	n.Handle("poll", func(msg maelstrom.Message) error {
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		var msgs = make(map[string][][]float64)
+		var offsets = req_body["offsets"].(map[string]any) // Interface conversion issue: WHY?
+		for key, offset := range offsets {
+			offset := int(offset.(float64))
+			messages := make([][]float64, 0)
+
+			log_mut.Lock()
+			if _, ok := kafka_log[key]; ok && len(kafka_log[key]) >= offset {
+				for i := offset; i < len(msgs[key]); i++ {
+					var pair = make([]float64, 2)
+					pair[0] = float64(i)
+					pair[1] = kafka_log[key][i]
+					messages = append(messages, pair)
+				}
+			}
+			log_mut.Unlock()
+			msgs[key] = messages
+		}
+
+		return n.Reply(msg, map[string]any{
+			"type": "poll_ok",
+			"msgs": msgs,
+		})
+	})
+
+}
+
+func handle_commit_offsets_a(n *maelstrom.Node) {
+	n.Handle("commit_offsets", func(msg maelstrom.Message) error {
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		return n.Reply(msg, map[string]any{
+			"type": "commit_offsets_ok",
+		})
+	})
+
+}
+
+func handle_list_committed_offsets_a(n *maelstrom.Node) {
+	// Input: {
+	//   "type": "list_committed_offsets",
+	// 	 "keys": ["k1", "k2"]
+	// }
+	//
+	// Output: {
+	//   "type": "list_committed_offsets_ok",
+	//   "offsets": {
+	//     "k1": 1000,
+	//     "k2": 2000
+	//   }
+	// }
+	n.Handle("list_committed_offsets", func(msg maelstrom.Message) error {
+		var req_body map[string]any
+		if err := json.Unmarshal(msg.Body, &req_body); err != nil {
+			return err
+		}
+		var keys = make(map[string]int)
+
+		log_mut.Lock()
+		for _, key := range req_body["keys"].([]any) {
+			key := key.(string)
+			keys[key] = len(kafka_log[key]) // TODO: Check if key exists
+		}
+		log_mut.Unlock()
+
+		return n.Reply(msg, map[string]any{
+			"type":    "list_committed_offsets_ok",
+			"offsets": keys,
 		})
 	})
 }
