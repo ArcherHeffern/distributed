@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -181,14 +182,16 @@ func handle_topology_b(n *maelstrom.Node) {
 }
 
 // ############
-// Challenge 3d: Single Node Broadcast Service
+// Challenge 3d-e: Single Node Broadcast Service
 // ############
 // I tried to implement a gossip protocol here, but 2-4 messages were usually were dropped. In addition, this was not efficient enough to be accepted.
 // Solution: Can broadcast to each other node
 // Issue: Needed to use a lock. I was losing a lot of time on synchronization issues.
 // Others solution uses hierarchical structure where you visit all chidren and parents, and don't backtrack to source or itself. Works but not necessary for performance.
+// We send batched broadcast messages every 500ms
 var seen_map = make(map[float64]struct{})
 var m sync.Mutex
+var retry = 100
 
 func handle_read_d(n *maelstrom.Node) {
 	n.Handle("read", func(msg maelstrom.Message) error {
@@ -228,7 +231,7 @@ func handle_broadcast_d(n *maelstrom.Node) {
 				continue
 			}
 			go func() {
-				n.RPC(dest, req_body, nil)
+				rpcWithRetry(n, dest, req_body, retry)
 			}()
 		}
 
@@ -275,4 +278,25 @@ func select_n_random(list []string, n int) []string {
 
 	// Return the first n elements from the shuffled copy.
 	return list[:n]
+}
+
+// Taken from https://github.com/teivah/gossip-glomers/blob/main/challenge-3e-broadcast/main.go
+func rpcWithRetry(n *maelstrom.Node, dst string, body map[string]any, retry int) error {
+	var err error
+	for i := 0; i < retry; i++ {
+		if err = rpc(n, dst, body); err != nil {
+			time.Sleep(100 * time.Duration(i) * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return err
+}
+
+// Taken from https://github.com/teivah/gossip-glomers/blob/main/challenge-3e-broadcast/main.go
+func rpc(n *maelstrom.Node, dst string, body map[string]any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := n.SyncRPC(ctx, dst, body)
+	return err
 }
